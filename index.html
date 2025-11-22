@@ -192,11 +192,13 @@
     let handLandmarker = null;
     let running = false;
 
-    // state
     let lastVideoTime = -1;
     let isPinching = false;
     let wasPinching = false;
     let activeFile = null;
+
+    // hysteresis pinch state
+    let pinchClosed = false;
 
     function log(msg) {
       const ts = new Date().toISOString().split("T")[1].split(".")[0];
@@ -243,7 +245,7 @@
 
         running = true;
         setStatus("Camera started. Show your hand in front of the camera.");
-        log("Ready – start pinching over a file to drag it.");
+        log("Ready – pinch over a file to drag it.");
 
         window.requestAnimationFrame(loop);
       } catch (err) {
@@ -259,7 +261,7 @@
       overlay.height = rect.height;
     }
 
-   // 1) Map hand -> desktop with mirrored X, so real-world left = cursor left
+    // Mirror X so hand movement feels natural left/right
     function screenCoordsFromLandmark(landmark) {
       const rect = desktop.getBoundingClientRect();
       const mirroredX = 1 - landmark.x;
@@ -295,41 +297,66 @@
       file.style.top = newTop + "px";
     }
 
-    function detectPinch(landmarks) {
+    function distance(a, b) {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return Math.hypot(dx, dy);
+    }
+
+    // rough hand size: wrist ↔ index MCP
+    function getHandScale(landmarks) {
+      const wrist = landmarks[0];
+      const indexMcp = landmarks[5];
+      const d = distance(wrist, indexMcp);
+      return d > 0 ? d : 0.0001;
+    }
+
+    // hysteresis + hand-size normalization
+    function updatePinchState(landmarks) {
       const thumbTip = landmarks[4];
       const indexTip = landmarks[8];
 
-      const dx = thumbTip.x - indexTip.x;
-      const dy = thumbTip.y - indexTip.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      const rawDist = distance(thumbTip, indexTip);
+      const handScale = getHandScale(landmarks);
+      const normDist = rawDist / handScale;
 
-      const PINCH_THRESHOLD = 0.05; // bump to 0.07–0.08 if needed
-      return dist < PINCH_THRESHOLD;
+      const PINCH_ON = 0.45;  // tighter
+      const PINCH_OFF = 0.65; // looser
+
+      if (!pinchClosed && normDist < PINCH_ON) {
+        pinchClosed = true;
+        log(`Pinch ON (normDist=${normDist.toFixed(2)})`);
+      } else if (pinchClosed && normDist > PINCH_OFF) {
+        pinchClosed = false;
+        log(`Pinch OFF (normDist=${normDist.toFixed(2)})`);
+      }
+
+      return pinchClosed;
     }
 
-    // draw mirrored hand so overlay matches your real movement
     function drawLandmarks(results) {
-  overlayCtx.save();
-  overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      overlayCtx.save();
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
-  if (!results || !results.landmarks || results.landmarks.length === 0) {
-    overlayCtx.restore();
-    return;
-  }
+      if (!results || !results.landmarks || results.landmarks.length === 0) {
+        overlayCtx.restore();
+        return;
+      }
 
-  const h = results.landmarks[0];
+      const h = results.landmarks[0];
 
-  // Mirror all x coords for drawing
-  const mirrored = h.map((p) => ({
-    ...p,
-    x: 1 - p.x
-  }));
+      // mirror landmarks for drawing so overlay matches real movement
+      const mirrored = h.map((p) => ({
+        ...p,
+        x: 1 - p.x
+      }));
 
-  drawingUtils.drawConnectors(mirrored, HandLandmarker.HAND_CONNECTIONS);
-  drawingUtils.drawLandmarks(mirrored, { radius: 3 });
+      drawingUtils.drawConnectors(mirrored, HandLandmarker.HAND_CONNECTIONS);
+      drawingUtils.drawLandmarks(mirrored, { radius: 3 });
 
-  overlayCtx.restore();
-}
+      overlayCtx.restore();
+    }
+
     async function loop() {
       if (!running || !handLandmarker) return;
 
@@ -348,13 +375,12 @@
       if (results && results.landmarks && results.landmarks.length > 0) {
         const landmarks = results.landmarks[0];
 
-        const pinchNow = detectPinch(landmarks);
+        const pinchNow = updatePinchState(landmarks);
         const pinchPosNorm = landmarks[8]; // index fingertip
         const { x, y } = screenCoordsFromLandmark(pinchPosNorm);
 
         isPinching = pinchNow;
 
-        // pinch start
         if (isPinching && !wasPinching) {
           const file = getFileUnderPoint(x, y);
           if (file) {
@@ -366,12 +392,10 @@
           }
         }
 
-        // pinch move
         if (isPinching && activeFile) {
           updateFilePosition(activeFile, x, y);
         }
 
-        // pinch end
         if (!isPinching && wasPinching && activeFile) {
           log("Pinch released – dropped " + activeFile.dataset.id);
           activeFile.classList.remove("active");
@@ -380,7 +404,6 @@
 
         wasPinching = isPinching;
       } else {
-        // no hand detected
         isPinching = false;
         if (wasPinching && activeFile) {
           log("Hand lost – dropping " + activeFile.dataset.id);
@@ -388,6 +411,7 @@
           activeFile = null;
         }
         wasPinching = false;
+        pinchClosed = false;
       }
 
       window.requestAnimationFrame(loop);
