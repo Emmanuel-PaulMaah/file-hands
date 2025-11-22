@@ -259,10 +259,11 @@
       overlay.height = rect.height;
     }
 
-    // Map normalized landmark coords -> desktop coordinates (viewport space)
+   // 1) Map hand -> desktop with mirrored X, so real-world left = cursor left
     function screenCoordsFromLandmark(landmark) {
       const rect = desktop.getBoundingClientRect();
-      const x = landmark.x * rect.width + rect.left;
+      const mirroredX = 1 - landmark.x;
+      const x = mirroredX * rect.width + rect.left;
       const y = landmark.y * rect.height + rect.top;
       return { x, y };
     }
@@ -306,23 +307,29 @@
       return dist < PINCH_THRESHOLD;
     }
 
+    // draw mirrored hand so overlay matches your real movement
     function drawLandmarks(results) {
-      overlayCtx.save();
-      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+  overlayCtx.save();
+  overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
-      if (!results || !results.landmarks || results.landmarks.length === 0) {
-        overlayCtx.restore();
-        return;
-      }
+  if (!results || !results.landmarks || results.landmarks.length === 0) {
+    overlayCtx.restore();
+    return;
+  }
 
-      const h = results.landmarks[0];
-      // DrawingUtils expects coords in [0,1] when used with VIDEO tasks.
-      drawingUtils.drawConnectors(h, HandLandmarker.HAND_CONNECTIONS);
-      drawingUtils.drawLandmarks(h, { radius: 3 });
+  const h = results.landmarks[0];
 
-      overlayCtx.restore();
-    }
+  // Mirror all x coords for drawing
+  const mirrored = h.map((p) => ({
+    ...p,
+    x: 1 - p.x
+  }));
 
+  drawingUtils.drawConnectors(mirrored, HandLandmarker.HAND_CONNECTIONS);
+  drawingUtils.drawLandmarks(mirrored, { radius: 3 });
+
+  overlayCtx.restore();
+}
     async function loop() {
       if (!running || !handLandmarker) return;
 
