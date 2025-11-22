@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Hand Tracking File Drag Demo</title>
+  <title>Hand-Tracked File Drag Demo</title>
   <style>
     * {
       box-sizing: border-box;
@@ -42,25 +42,16 @@
       font-size: 12px;
     }
 
-    main {
-      flex: 1;
-      display: grid;
-      grid-template-columns: 1.4fr 1fr;
-      gap: 0;
-      min-height: 0;
-    }
-
-    /* Left: desktop grid and files */
+    /* Full-screen desktop grid */
     #desktop {
       position: relative;
+      flex: 1;
       overflow: hidden;
       background-color: #020617;
-      /* draw grid using background image */
       background-image:
         linear-gradient(#1f2937 1px, transparent 1px),
         linear-gradient(90deg, #1f2937 1px, transparent 1px);
       background-size: 80px 80px;
-      border-right: 1px solid #1f2937;
     }
 
     .file {
@@ -97,24 +88,7 @@
       text-overflow: ellipsis;
     }
 
-    /* Right: webcam + debug */
-    #sidePanel {
-      display: flex;
-      flex-direction: column;
-      background: #020617;
-    }
-    #videoContainer {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 4 / 3;
-      background: #020617;
-      border-bottom: 1px solid #1f2937;
-    }
-    #webcam {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
+    /* Overlay for hand skeleton / cursor */
     #overlay {
       position: absolute;
       top: 0;
@@ -124,47 +98,28 @@
       pointer-events: none;
     }
 
-    #logPanel {
-      flex: 1;
-      padding: 8px 12px;
-      font-size: 11px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
+    /* Hidden video used only for MediaPipe input */
+    #webcam {
+      display: none;
     }
 
-    details {
-      background: #020617;
-      border-radius: 6px;
-      border: 1px solid #1f2937;
-      max-height: 100%;
-      overflow: hidden;
-    }
-    summary {
-      padding: 6px 10px;
-      cursor: pointer;
+    #debug {
       font-size: 11px;
-      font-weight: 500;
+      padding: 6px 10px;
+      background: #020617;
+      border-top: 1px solid #1f2937;
     }
     #logs {
       width: 100%;
-      height: 180px;
+      height: 100px;
       border: none;
-      padding: 6px 8px;
+      padding: 4px 6px;
       resize: none;
       background: #020617;
       color: #e5e7eb;
       font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 11px;
-      border-top: 1px solid #1f2937;
     }
-
-    .hint {
-      font-size: 11px;
-      opacity: 0.8;
-      margin-top: 6px;
-    }
-
   </style>
 </head>
 <body>
@@ -176,53 +131,44 @@
     <button id="startBtn">Start Camera</button>
   </header>
 
-  <main>
-    <!-- Left: desktop grid with three file thumbnails -->
-    <section id="desktop">
-      <div
-        class="file"
-        data-id="file1"
-        style="left: 60px; top: 60px;"
-      >
-        <img src="https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=400&q=80" alt="File 1" />
-        <div class="file-label">proposal_v1.pdf</div>
-      </div>
-      <div
-        class="file"
-        data-id="file2"
-        style="left: 260px; top: 160px;"
-      >
-        <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=400&q=80" alt="File 2" />
-        <div class="file-label">design_mock.png</div>
-      </div>
-      <div
-        class="file"
-        data-id="file3"
-        style="left: 460px; top: 260px;"
-      >
-        <img src="https://images.unsplash.com/photo-1553877522-43269d4ea984?auto=format&fit=crop&w=400&q=80" alt="File 3" />
-        <div class="file-label">notes.txt</div>
-      </div>
-    </section>
+  <!-- Full-screen desktop grid -->
+  <section id="desktop">
+    <div
+      class="file"
+      data-id="file1"
+      style="left: 60px; top: 60px;"
+    >
+      <img src="https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=400&q=80" alt="File 1" />
+      <div class="file-label">proposal_v1.pdf</div>
+    </div>
+    <div
+      class="file"
+      data-id="file2"
+      style="left: 260px; top: 160px;"
+    >
+      <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=400&q=80" alt="File 2" />
+      <div class="file-label">design_mock.png</div>
+    </div>
+    <div
+      class="file"
+      data-id="file3"
+      style="left: 460px; top: 260px;"
+    >
+      <img src="https://images.unsplash.com/photo-1553877522-43269d4ea984?auto=format&fit=crop&w=400&q=80" alt="File 3" />
+      <div class="file-label">notes.txt</div>
+    </div>
 
-    <!-- Right: video + overlay + logs -->
-    <section id="sidePanel">
-      <div id="videoContainer">
-        <video id="webcam" autoplay playsinline muted></video>
-        <canvas id="overlay"></canvas>
-      </div>
-      <div id="logPanel">
-        <details open>
-          <summary>Debug console</summary>
-          <textarea id="logs" readonly></textarea>
-        </details>
-        <div class="hint">
-          Gesture: bring thumb + index together to "pinch".<br/>
-          Pinch over a file to grab it, move your hand to drag, open fingers to drop.
-        </div>
-      </div>
-    </section>
-  </main>
+    <!-- Hand overlay on top of desktop -->
+    <canvas id="overlay"></canvas>
+  </section>
+
+  <!-- Hidden video for MediaPipe -->
+  <video id="webcam" autoplay playsinline muted></video>
+
+  <div id="debug">
+    <div>Gesture: thumb + index pinch over a file to grab, move to drag, release to drop.</div>
+    <textarea id="logs" readonly></textarea>
+  </div>
 
   <script type="module">
     import {
@@ -234,8 +180,8 @@
     const startBtn = document.getElementById("startBtn");
     const statusEl = document.getElementById("status");
     const video = document.getElementById("webcam");
-    const overlay = document.getElementById("overlay");
     const desktop = document.getElementById("desktop");
+    const overlay = document.getElementById("overlay");
     const logTextarea = document.getElementById("logs");
 
     const files = Array.from(document.querySelectorAll(".file"));
@@ -308,22 +254,20 @@
     }
 
     function resizeOverlay() {
-      const rect = video.getBoundingClientRect();
+      const rect = desktop.getBoundingClientRect();
       overlay.width = rect.width;
       overlay.height = rect.height;
     }
 
+    // Map normalized landmark coords -> desktop coordinates (viewport space)
     function screenCoordsFromLandmark(landmark) {
-      // Map normalized hand coords [0,1] into the desktop area, not the video box
-      const desktopRect = desktop.getBoundingClientRect();
-      const x = landmark.x * desktopRect.width + desktopRect.left;
-      const y = landmark.y * desktopRect.height + desktopRect.top;
+      const rect = desktop.getBoundingClientRect();
+      const x = landmark.x * rect.width + rect.left;
+      const y = landmark.y * rect.height + rect.top;
       return { x, y };
     }
 
-
     function getFileUnderPoint(x, y) {
-      // check from top-most to bottom-most
       for (let i = files.length - 1; i >= 0; i--) {
         const file = files[i];
         const rect = file.getBoundingClientRect();
@@ -343,7 +287,6 @@
       let newLeft = x - desktopRect.left - offsetX;
       let newTop = y - desktopRect.top - offsetY;
 
-      // clamp inside desktop
       newLeft = Math.max(0, Math.min(newLeft, desktopRect.width - fileRect.width));
       newTop = Math.max(0, Math.min(newTop, desktopRect.height - fileRect.height));
 
@@ -359,8 +302,7 @@
       const dy = thumbTip.y - indexTip.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      // simple normalized threshold; tune if needed
-      const PINCH_THRESHOLD = 0.05;
+      const PINCH_THRESHOLD = 0.05; // bump to 0.07–0.08 if needed
       return dist < PINCH_THRESHOLD;
     }
 
@@ -374,10 +316,9 @@
       }
 
       const h = results.landmarks[0];
+      // DrawingUtils expects coords in [0,1] when used with VIDEO tasks.
       drawingUtils.drawConnectors(h, HandLandmarker.HAND_CONNECTIONS);
-      drawingUtils.drawLandmarks(h, {
-        radius: 3
-      });
+      drawingUtils.drawLandmarks(h, { radius: 3 });
 
       overlayCtx.restore();
     }
@@ -445,7 +386,6 @@
       window.requestAnimationFrame(loop);
     }
 
-    // wire up start button
     startBtn.addEventListener("click", () => {
       if (!handLandmarker) {
         setStatus("Still loading models – please wait a moment…");
@@ -456,7 +396,6 @@
       }
     });
 
-    // init on load
     if (!("mediaDevices" in navigator && "getUserMedia" in navigator.mediaDevices)) {
       setStatus("getUserMedia not supported in this browser.");
     } else {
