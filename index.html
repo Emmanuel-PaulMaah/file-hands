@@ -314,12 +314,13 @@
     }
 
     function screenCoordsFromLandmark(landmark) {
-      // landmarks are normalized [0,1] in video space
-      const rect = video.getBoundingClientRect();
-      const x = landmark.x * rect.width + rect.left;
-      const y = landmark.y * rect.height + rect.top;
+      // Map normalized hand coords [0,1] into the desktop area, not the video box
+      const desktopRect = desktop.getBoundingClientRect();
+      const x = landmark.x * desktopRect.width + desktopRect.left;
+      const y = landmark.y * desktopRect.height + desktopRect.top;
       return { x, y };
     }
+
 
     function getFileUnderPoint(x, y) {
       // check from top-most to bottom-most
