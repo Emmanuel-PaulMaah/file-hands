@@ -320,8 +320,8 @@
       const handScale = getHandScale(landmarks);
       const normDist = rawDist / handScale;
 
-      const PINCH_ON = 0.30;  // tighter
-      const PINCH_OFF = 0.60; // looser
+      const PINCH_ON = 0.30;  // lower PINCH_ON → need tighter pinch to grab
+      const PINCH_OFF = 0.60; // higher PINCH_OFF → need more open hand to release
 
       if (!pinchClosed && normDist < PINCH_ON) {
         pinchClosed = true;
