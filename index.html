@@ -4,11 +4,7 @@
   <meta charset="UTF-8" />
   <title>Hand-Tracked File Drag Demo</title>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #0b1020;
@@ -18,7 +14,6 @@
       display: flex;
       flex-direction: column;
     }
-
     header {
       padding: 10px 16px;
       background: #111727;
@@ -28,10 +23,7 @@
       justify-content: space-between;
       font-size: 14px;
     }
-    header .status {
-      font-size: 12px;
-      opacity: 0.8;
-    }
+    header .status { font-size: 12px; opacity: 0.8; }
     header button {
       background: #2563eb;
       border: none;
@@ -42,7 +34,6 @@
       font-size: 12px;
     }
 
-    /* Full-screen desktop grid */
     #desktop {
       position: relative;
       flex: 1;
@@ -88,20 +79,14 @@
       text-overflow: ellipsis;
     }
 
-    /* Overlay for hand skeleton / cursor */
     #overlay {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
       pointer-events: none;
     }
 
-    /* Hidden video used only for MediaPipe input */
-    #webcam {
-      display: none;
-    }
+    #webcam { display: none; }
 
     #debug {
       font-size: 11px;
@@ -131,38 +116,23 @@
     <button id="startBtn">Start Camera</button>
   </header>
 
-  <!-- Full-screen desktop grid -->
   <section id="desktop">
-    <div
-      class="file"
-      data-id="file1"
-      style="left: 60px; top: 60px;"
-    >
+    <div class="file" data-id="file1" style="left: 60px; top: 60px;">
       <img src="https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=400&q=80" alt="File 1" />
       <div class="file-label">proposal_v1.pdf</div>
     </div>
-    <div
-      class="file"
-      data-id="file2"
-      style="left: 260px; top: 160px;"
-    >
+    <div class="file" data-id="file2" style="left: 260px; top: 160px;">
       <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=400&q=80" alt="File 2" />
       <div class="file-label">design_mock.png</div>
     </div>
-    <div
-      class="file"
-      data-id="file3"
-      style="left: 460px; top: 260px;"
-    >
+    <div class="file" data-id="file3" style="left: 460px; top: 260px;">
       <img src="https://images.unsplash.com/photo-1553877522-43269d4ea984?auto=format&fit=crop&w=400&q=80" alt="File 3" />
       <div class="file-label">notes.txt</div>
     </div>
 
-    <!-- Hand overlay on top of desktop -->
     <canvas id="overlay"></canvas>
   </section>
 
-  <!-- Hidden video for MediaPipe -->
   <video id="webcam" autoplay playsinline muted></video>
 
   <div id="debug">
@@ -197,8 +167,79 @@
     let wasPinching = false;
     let activeFile = null;
 
-    // hysteresis pinch state
+    // =========================
+    // 1) One Euro filter (cursor smoothing)
+    // =========================
+    class OneEuroFilter {
+      constructor(freq = 60, minCutoff = 1.2, beta = 0.05, dCutoff = 1.0) {
+        this.freq = freq;
+        this.minCutoff = minCutoff;
+        this.beta = beta;
+        this.dCutoff = dCutoff;
+
+        this.xPrev = null;
+        this.dxPrev = 0;
+        this.tPrev = null;
+      }
+
+      alpha(cutoff) {
+        const te = 1.0 / this.freq;
+        const tau = 1.0 / (2 * Math.PI * cutoff);
+        return 1.0 / (1.0 + tau / te);
+      }
+
+      lowpass(prev, curr, a) {
+        return prev + a * (curr - prev);
+      }
+
+      filter(x, tMs) {
+        if (this.tPrev == null) {
+          this.tPrev = tMs;
+          this.xPrev = x;
+          this.dxPrev = 0;
+          return x;
+        }
+
+        const dt = Math.max(1e-6, (tMs - this.tPrev) / 1000);
+        this.freq = 1.0 / dt;
+
+        const dx = (x - this.xPrev) / dt;
+        const ad = this.alpha(this.dCutoff);
+        const dxHat = this.lowpass(this.dxPrev, dx, ad);
+
+        const cutoff = this.minCutoff + this.beta * Math.abs(dxHat);
+        const a = this.alpha(cutoff);
+
+        const xHat = this.lowpass(this.xPrev, x, a);
+
+        this.tPrev = tMs;
+        this.xPrev = xHat;
+        this.dxPrev = dxHat;
+
+        return xHat;
+      }
+
+      reset() {
+        this.xPrev = null;
+        this.dxPrev = 0;
+        this.tPrev = null;
+      }
+    }
+
+    const xFilter = new OneEuroFilter(60, 1.2, 0.05, 1.0);
+    const yFilter = new OneEuroFilter(60, 1.2, 0.05, 1.0);
+
+    // =========================
+    // 2) Pinch debounce + hysteresis
+    // =========================
     let pinchClosed = false;
+    let pinchOnCount = 0;
+    let pinchOffCount = 0;
+
+    const PINCH_ON = 0.30;   // tighter pinch to turn ON
+    const PINCH_OFF = 0.60;  // wider open to turn OFF
+    const ON_FRAMES = 2;     // require N consecutive frames to grab
+    const OFF_FRAMES = 3;    // require N consecutive frames to release
 
     function log(msg) {
       const ts = new Date().toISOString().split("T")[1].split(".")[0];
@@ -311,8 +352,8 @@
       return d > 0 ? d : 0.0001;
     }
 
-    // hysteresis + hand-size normalization
-    function updatePinchState(landmarks) {
+    // Debounced hysteresis pinch state
+    function updatePinchStateDebounced(landmarks) {
       const thumbTip = landmarks[4];
       const indexTip = landmarks[8];
 
@@ -320,15 +361,26 @@
       const handScale = getHandScale(landmarks);
       const normDist = rawDist / handScale;
 
-      const PINCH_ON = 0.30;  // lower PINCH_ON → need tighter pinch to grab
-      const PINCH_OFF = 0.60; // higher PINCH_OFF → need more open hand to release
+      if (!pinchClosed) {
+        if (normDist < PINCH_ON) pinchOnCount++;
+        else pinchOnCount = 0;
 
-      if (!pinchClosed && normDist < PINCH_ON) {
-        pinchClosed = true;
-        log(`Pinch ON (normDist=${normDist.toFixed(2)})`);
-      } else if (pinchClosed && normDist > PINCH_OFF) {
-        pinchClosed = false;
-        log(`Pinch OFF (normDist=${normDist.toFixed(2)})`);
+        if (pinchOnCount >= ON_FRAMES) {
+          pinchClosed = true;
+          pinchOnCount = 0;
+          pinchOffCount = 0;
+          log(`Pinch ON (normDist=${normDist.toFixed(2)})`);
+        }
+      } else {
+        if (normDist > PINCH_OFF) pinchOffCount++;
+        else pinchOffCount = 0;
+
+        if (pinchOffCount >= OFF_FRAMES) {
+          pinchClosed = false;
+          pinchOffCount = 0;
+          pinchOnCount = 0;
+          log(`Pinch OFF (normDist=${normDist.toFixed(2)})`);
+        }
       }
 
       return pinchClosed;
@@ -346,10 +398,7 @@
       const h = results.landmarks[0];
 
       // mirror landmarks for drawing so overlay matches real movement
-      const mirrored = h.map((p) => ({
-        ...p,
-        x: 1 - p.x
-      }));
+      const mirrored = h.map((p) => ({ ...p, x: 1 - p.x }));
 
       drawingUtils.drawConnectors(mirrored, HandLandmarker.HAND_CONNECTIONS);
       drawingUtils.drawLandmarks(mirrored, { radius: 3 });
@@ -375,9 +424,14 @@
       if (results && results.landmarks && results.landmarks.length > 0) {
         const landmarks = results.landmarks[0];
 
-        const pinchNow = updatePinchState(landmarks);
-        const pinchPosNorm = landmarks[8]; // index fingertip
-        const { x, y } = screenCoordsFromLandmark(pinchPosNorm);
+        const pinchNow = updatePinchStateDebounced(landmarks);
+
+        // cursor = index fingertip (same as before), but smoothed with OneEuro
+        const cursorNorm = landmarks[8];
+        let { x, y } = screenCoordsFromLandmark(cursorNorm);
+
+        x = xFilter.filter(x, nowMs);
+        y = yFilter.filter(y, nowMs);
 
         isPinching = pinchNow;
 
@@ -404,14 +458,23 @@
 
         wasPinching = isPinching;
       } else {
+        // Hand lost: drop and reset filters/states for stability on reacquire
         isPinching = false;
+
         if (wasPinching && activeFile) {
           log("Hand lost – dropping " + activeFile.dataset.id);
           activeFile.classList.remove("active");
           activeFile = null;
         }
+
         wasPinching = false;
+
         pinchClosed = false;
+        pinchOnCount = 0;
+        pinchOffCount = 0;
+
+        xFilter.reset();
+        yFilter.reset();
       }
 
       window.requestAnimationFrame(loop);
@@ -422,9 +485,7 @@
         setStatus("Still loading models – please wait a moment…");
         return;
       }
-      if (!running) {
-        startCamera();
-      }
+      if (!running) startCamera();
     });
 
     if (!("mediaDevices" in navigator && "getUserMedia" in navigator.mediaDevices)) {
